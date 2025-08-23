@@ -1,1 +1,20 @@
-/* You can add global styles to this file, and also import other style files */
+@import '@angular/material/prebuilt-themes/indigo-pink.css';
+
+html, body {
+  height: 100%;
+  margin: 0;
+  font-family: Roboto, "Helvetica Neue", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.mat-mdc-card {
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1) !important;
+  transition: box-shadow 0.3s ease;
+  
+  &:hover {
+    box-shadow: 0 8px 12px rgba(0, 0, 0, 0.15) !important;
+  }
+}
