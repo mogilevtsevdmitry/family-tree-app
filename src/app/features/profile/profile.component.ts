@@ -1,4 +1,3 @@
-// src/app/features/profile/profile.component.ts
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
@@ -20,54 +19,51 @@ import { RelationshipsListComponent } from './components/relationships-list/rela
         <app-profile-details [member]="member"></app-profile-details>
         <app-relationships-list
           [relationships]="relationships"
-        ></app-relationships-list>
+          [currentMember]="member"
+        >
+        </app-relationships-list>
       </div>
     </div>
   `,
   styles: [
     `
       .profile-container {
-        /* Изменено с min-height на height для правильного скроллинга */
-        height: calc(100vh - 64px); /* 64px - высота toolbar */
-        overflow-y: auto; /* Включаем вертикальный скролл */
-        overflow-x: hidden; /* Отключаем горизонтальный скролл */
+        height: calc(100vh - 64px);
+        overflow-y: auto;
+        overflow-x: hidden;
         background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-        background-attachment: fixed; /* Фиксируем градиент при скролле */
+        background-attachment: fixed;
       }
 
       .profile-content {
         padding: 20px;
-        min-height: 100%; /* Минимальная высота контента */
-        padding-bottom: 40px; /* Дополнительный отступ снизу */
+        min-height: 100%;
+        padding-bottom: 60px; /* Увеличен отступ для кнопки добавления */
       }
 
-      /* Адаптивные стили для мобильных устройств */
       @media (max-width: 599px) {
         .profile-container {
-          height: calc(100vh - 56px); /* Меньшая высота toolbar на мобильных */
+          height: calc(100vh - 56px);
         }
 
         .profile-content {
           padding: 12px;
-          padding-bottom: 30px;
+          padding-bottom: 50px;
         }
       }
 
-      /* Стили для планшетов */
       @media (min-width: 600px) and (max-width: 959px) {
         .profile-content {
           padding: 16px;
-          padding-bottom: 35px;
+          padding-bottom: 55px;
         }
       }
 
-      /* Улучшение производительности скролла */
       .profile-container {
-        -webkit-overflow-scrolling: touch; /* Плавный скролл на iOS */
-        scroll-behavior: smooth; /* Плавная прокрутка */
+        -webkit-overflow-scrolling: touch;
+        scroll-behavior: smooth;
       }
 
-      /* Кастомная полоса прокрутки для webkit браузеров */
       .profile-container::-webkit-scrollbar {
         width: 8px;
       }
@@ -87,7 +83,6 @@ import { RelationshipsListComponent } from './components/relationships-list/rela
         background: rgba(103, 58, 183, 0.7);
       }
 
-      /* Стили для Firefox */
       .profile-container {
         scrollbar-width: thin;
         scrollbar-color: rgba(103, 58, 183, 0.5) rgba(0, 0, 0, 0.1);
@@ -107,6 +102,18 @@ export class ProfileComponent implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
+    // Подписываемся на изменения в данных семьи
+    this.familyTreeService
+      .getFamilyMembers()
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(() => {
+        // Обновляем данные при изменениях
+        if (this.member) {
+          this.loadMemberProfile(this.member.id);
+        }
+      });
+
+    // Обработка параметров маршрута
     this.route.params.pipe(takeUntil(this.destroy$)).subscribe((params) => {
       const memberId = params['id'];
       if (memberId) {

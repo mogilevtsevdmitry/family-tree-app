@@ -8,6 +8,14 @@ import {
   RelationshipView,
 } from '../models/relationship.model';
 import { TreeNode } from '../models/tree-node.model';
+import {
+  addMember,
+  addRelationship,
+  deleteMember,
+  mockMembers,
+  mockRelationships,
+  updateMember,
+} from './mock-data';
 
 @Injectable({
   providedIn: 'root',
@@ -35,32 +43,6 @@ export class FamilyTreeService {
 
   getMemberById(id: string): FamilyMember | undefined {
     return this.familyMembers$.value.find((member) => member.id === id);
-  }
-
-  getRelationshipsForMember(memberId: string): RelationshipView[] {
-    const relationships = this.relationships$.value.filter(
-      (rel) => rel.sourceId === memberId || rel.targetId === memberId
-    );
-
-    return relationships
-      .map((rel) => {
-        const personId =
-          rel.sourceId === memberId ? rel.targetId : rel.sourceId;
-        const person = this.getMemberById(personId);
-
-        // Определяем тип связи относительно текущего члена семьи
-        let relationType = rel.type;
-        if (rel.targetId === memberId) {
-          // Инвертируем тип связи, если текущий член является целью
-          relationType = this.invertRelationType(rel.type, rel.gender);
-        }
-
-        return {
-          relationship: { ...rel, type: relationType },
-          person: person!,
-        };
-      })
-      .filter((rv) => rv.person !== undefined);
   }
 
   private invertRelationType(
@@ -122,14 +104,10 @@ export class FamilyTreeService {
   }
 
   buildTreeStructure(rootId: string): TreeNode | null {
-    // Находим самого старшего предка (корень дерева)
     const rootMember = this.findFamilyRoot(rootId);
     if (!rootMember) return null;
-
-    // Строим дерево от корня
     const visited = new Set<string>();
     const tree = this.buildNodeRecursive(rootMember, visited);
-
     return tree;
   }
 
@@ -263,223 +241,150 @@ export class FamilyTreeService {
       .filter((parent) => parent !== undefined)
       .map((parent) => ({ data: parent! }));
 
+    // Найти братьев и сестер
+    const siblingIds = new Set<string>();
+
+    // Ищем всех детей родителей текущего члена
+    parentRels.forEach((parentRel) => {
+      const parentId = parentRel.sourceId;
+
+      // Находим всех детей этого родителя (кроме текущего члена)
+      relationships
+        .filter(
+          (rel) =>
+            rel.sourceId === parentId &&
+            rel.targetId !== member.id &&
+            (rel.type === RelationshipType.Son ||
+              rel.type === RelationshipType.Daughter)
+        )
+        .forEach((rel) => siblingIds.add(rel.targetId));
+    });
+
+    node.siblings = Array.from(siblingIds)
+      .map((siblingId) => this.getMemberById(siblingId))
+      .filter((sibling) => sibling !== undefined && !visited.has(sibling!.id))
+      .map((sibling) => this.buildNodeRecursive(sibling!, visited, depth));
+
     return node;
   }
 
+  addFamilyMember(member: FamilyMember): string {
+    const newId = this.generateId();
+    const newMember = { ...member, id: newId };
+
+    // Добавляем в mock data
+    const newData = addMember(newMember);
+
+    // Обновляем BehaviorSubject
+    this.familyMembers$.next([...newData]);
+
+    return newId;
+  }
+
+  addRelationship(
+    sourceId: string,
+    targetId: string,
+    type: RelationshipType
+  ): void {
+    let newData;
+
+    if (type === RelationshipType.Father || type === RelationshipType.Mother) {
+      // Для родительских связей: новый член (targetId) становится родителем текущего (sourceId)
+      const childId = sourceId; // текущий член — это ребёнок
+      const parentId = targetId; // новый член — это родитель
+
+      // Определяем тип связи по полу ребёнка
+      const child = this.getMemberById(childId);
+      let childType = RelationshipType.Daughter; // по умолчанию дочь
+
+      if (child?.gender === Gender.Male) {
+        childType = RelationshipType.Son;
+      }
+
+      const canonicalParentChild: Relationship = {
+        id: this.generateRelationshipId(),
+        sourceId: parentId, // родитель
+        targetId: childId, // ребёнок
+        type: childType, // Son или Daughter
+      };
+
+      newData = addRelationship(canonicalParentChild);
+    } else {
+      const newRelationship: Relationship = {
+        id: this.generateRelationshipId(),
+        sourceId,
+        targetId,
+        type,
+      };
+      newData = addRelationship(newRelationship);
+    }
+
+    // Обновляем BehaviorSubject
+    this.relationships$.next([...newData]);
+  }
+
+  updateFamilyMember(member: FamilyMember): void {
+    updateMember(member);
+    this.familyMembers$.next([...mockMembers]);
+  }
+
+  deleteFamilyMember(memberId: string): void {
+    deleteMember(memberId);
+    this.familyMembers$.next([...mockMembers]);
+    this.relationships$.next([...mockRelationships]);
+  }
+
+  getRelationshipsForMember(memberId: string): RelationshipView[] {
+    const relationships = this.relationships$.value.filter(
+      (rel) => rel.sourceId === memberId || rel.targetId === memberId
+    );
+
+    return relationships
+      .map((rel) => {
+        const personId =
+          rel.sourceId === memberId ? rel.targetId : rel.sourceId;
+        const person = this.getMemberById(personId);
+
+        if (!person) return null;
+
+        let relationType = rel.type;
+
+        // Если текущий член является targetId, нужно инвертировать тип связи
+        if (rel.targetId === memberId) {
+          relationType = this.invertRelationType(rel.type, person.gender);
+        }
+
+        return {
+          relationship: { ...rel, type: relationType },
+          person: person,
+        };
+      })
+      .filter((rv) => rv !== null) as RelationshipView[];
+  }
+
+  refreshData(): void {
+    this.familyMembers$.next([...mockMembers]);
+    this.relationships$.next([...mockRelationships]);
+  }
+
+  private generateId(): string {
+    const timestamp = Date.now();
+    const random = Math.floor(Math.random() * 1000);
+    return `member_${timestamp}_${random}`;
+  }
+
+  private generateRelationshipId(): string {
+    const timestamp = Date.now();
+    const random = Math.floor(Math.random() * 1000);
+    return `rel_${timestamp}_${random}`;
+  }
+
   private loadMockData(): void {
-    const members: FamilyMember[] = [
-      // Текущее поколение
-      {
-        id: '1',
-        firstName: 'Дмитрий',
-        lastName: 'Могилевцев',
-        middleName: 'Александрович',
-        gender: Gender.Male,
-        birthDate: new Date(1991, 2, 23),
-        occupation: 'Программист',
-        location: 'Тюмень',
-      },
-      {
-        id: '2',
-        firstName: 'Мария',
-        lastName: 'Седлецкая',
-        middleName: 'Сергеевна',
-        gender: Gender.Female,
-        birthDate: new Date(1990, 0, 23),
-        occupation: 'Психолог',
-        location: 'Тюмень',
-      },
-      // Родители
-      {
-        id: '3',
-        firstName: 'Александр',
-        lastName: 'Могилевцев',
-        middleName: 'Васильевич',
-        gender: Gender.Male,
-        birthDate: new Date(1965, 5, 30),
-        occupation: 'Водитель погрузчика',
-        location: 'Новороссийск',
-      },
-      {
-        id: '4',
-        firstName: 'Ирина',
-        lastName: 'Могилевцева',
-        middleName: 'Николаевна',
-        gender: Gender.Female,
-        birthDate: new Date(1971, 0, 9),
-        occupation: 'Нотариус',
-        location: 'Новороссийск',
-      },
-      // Дети
-      {
-        id: '5',
-        firstName: 'Арина',
-        lastName: 'Могилевцева',
-        gender: Gender.Female,
-        birthDate: new Date(2019, 8, 3),
-        location: 'Тюмень',
-      },
-      {
-        id: '6',
-        firstName: 'Ксения',
-        lastName: 'Могилевцева',
-        gender: Gender.Female,
-        birthDate: new Date(2014, 3, 2),
-        location: 'Тюмень',
-      },
-      // Дедушка и бабушка
-      {
-        id: '7',
-        firstName: 'Николай',
-        lastName: 'Беда',
-        middleName: 'Сергеевич',
-        gender: Gender.Male,
-        birthDate: new Date(1944, 10, 1),
-        occupation: 'Инженер-строитель',
-        location: 'Новороссийск',
-      },
-      {
-        id: '8',
-        firstName: 'Валентина',
-        lastName: 'Беда',
-        middleName: 'Ивановна',
-        gender: Gender.Female,
-        birthDate: new Date(1946, 7, 17),
-        occupation: 'Инженер-строитель',
-        location: 'Новороссийск',
-      },
-      {
-        id: '9',
-        firstName: 'Алёна',
-        lastName: 'Балалаева',
-        middleName: 'Александровна',
-        gender: Gender.Female,
-        birthDate: new Date(1992, 4, 18),
-        location: 'Новороссийск',
-      },
-      {
-        id: '10',
-        firstName: 'Василий',
-        lastName: 'Могилевцев',
-        gender: Gender.Male,
-      },
-      {
-        id: '11',
-        firstName: 'Зоя',
-        lastName: 'Могилевцева',
-        gender: Gender.Female,
-      },
-    ];
-
-    const relationships: Relationship[] = [
-      // Супружеские связи
-      { id: 'r1', sourceId: '1', targetId: '2', type: RelationshipType.Spouse },
-      { id: 'r2', sourceId: '3', targetId: '4', type: RelationshipType.Spouse },
-      { id: 'r3', sourceId: '7', targetId: '8', type: RelationshipType.Spouse },
-      {
-        id: 'r16',
-        sourceId: '10',
-        targetId: '11',
-        type: RelationshipType.Spouse,
-      },
-
-      // Дмитрий и Мария - родители детей
-      {
-        id: 'r4',
-        sourceId: '1',
-        targetId: '5',
-        type: RelationshipType.Daughter,
-        gender: Gender.Male,
-      },
-      {
-        id: 'r5',
-        sourceId: '2',
-        targetId: '5',
-        type: RelationshipType.Daughter,
-        gender: Gender.Female,
-      },
-      {
-        id: 'r6',
-        sourceId: '1',
-        targetId: '6',
-        type: RelationshipType.Daughter,
-        gender: Gender.Male,
-      },
-      {
-        id: 'r7',
-        sourceId: '2',
-        targetId: '6',
-        type: RelationshipType.Daughter,
-        gender: Gender.Female,
-      },
-
-      // Александр и Ирина - родители Дмитрия
-      {
-        id: 'r8',
-        sourceId: '3',
-        targetId: '1',
-        type: RelationshipType.Son,
-        gender: Gender.Male,
-      },
-      {
-        id: 'r9',
-        sourceId: '4',
-        targetId: '1',
-        type: RelationshipType.Son,
-        gender: Gender.Female,
-      },
-
-      // Александр и Ирина - родители Алёны (сестра Дмитрия?)
-      {
-        id: 'r10',
-        sourceId: '3',
-        targetId: '9',
-        type: RelationshipType.Daughter,
-        gender: Gender.Male,
-      },
-      {
-        id: 'r11',
-        sourceId: '4',
-        targetId: '9',
-        type: RelationshipType.Daughter,
-        gender: Gender.Female,
-      },
-
-      // Николай и Валентина - родители Ирины
-      {
-        id: 'r12',
-        sourceId: '7',
-        targetId: '4',
-        type: RelationshipType.Daughter,
-        gender: Gender.Male,
-      },
-      {
-        id: 'r13',
-        sourceId: '8',
-        targetId: '4',
-        type: RelationshipType.Daughter,
-        gender: Gender.Female,
-      },
-
-      // Василий и Зоя - родители Александра
-      {
-        id: 'r14',
-        sourceId: '10',
-        targetId: '3',
-        type: RelationshipType.Son,
-        gender: Gender.Male,
-      },
-      {
-        id: 'r15',
-        sourceId: '11',
-        targetId: '3',
-        type: RelationshipType.Son,
-        gender: Gender.Female,
-      },
-    ];
-
-    this.familyMembers$.next(members);
-    this.relationships$.next(relationships);
-    this.selectedMember$.next(members[4]);
+    this.familyMembers$.next([...mockMembers]);
+    this.relationships$.next([...mockRelationships]);
+    const currentUser = mockMembers.find((m) => m.id === '1');
+    if (currentUser) {
+      this.selectedMember$.next(currentUser);
+    }
   }
 }
