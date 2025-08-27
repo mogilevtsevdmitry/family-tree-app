@@ -132,6 +132,40 @@ export class FamilyTreeService {
 
     // Добавляем братьев/сестер на корневом уровне, если они есть
     tree = this.includeSiblingsAtRoot(tree, visited, familyNetwork);
+    // Находим всех членов семьи без родителей (верхний уровень)
+    const topLevelAncestors = Array.from(familyNetwork)
+      .map((id) => this.getMemberById(id))
+      .filter((m): m is FamilyMember => !!m)
+      .filter(
+        (m) =>
+          !this.relationships$.value.some(
+            (rel) =>
+              rel.targetId === m.id &&
+              (rel.type === RelationshipType.Son ||
+                rel.type === RelationshipType.Daughter)
+          )
+      );
+
+    // Добавляем остальных верхнеуровневых предков как отдельные поддеревья
+    const additionalRoots: TreeNode[] = [];
+    topLevelAncestors.forEach((ancestor) => {
+      if (ancestor.id !== rootMember.id) {
+        const subtree = this.buildNodeRecursive(
+          ancestor,
+          new Set<string>(),
+          0,
+          familyNetwork
+        );
+        additionalRoots.push(subtree);
+      }
+    });
+
+    if (additionalRoots.length > 0) {
+      (tree as any).siblings = [
+        ...((tree as any).siblings || []),
+        ...additionalRoots,
+      ];
+    }
 
     return tree;
   }

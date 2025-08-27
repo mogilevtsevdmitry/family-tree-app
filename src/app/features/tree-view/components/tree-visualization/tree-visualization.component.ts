@@ -340,7 +340,8 @@ export class TreeVisualizationComponent implements OnInit, OnDestroy {
           const lastParent = parentNodes[parentNodes.length - 1];
           const centerX = (firstParent.x + lastParent.x) / 2;
           const centerY = node.y - this.nodeRadius;
-
+          const deltaX = centerX - node.x;
+          this.shiftSubtree(node, deltaX);
           parentPositionsCache.set(node.data.data.id, {
             x: centerX,
             y: centerY,
@@ -783,6 +784,45 @@ export class TreeVisualizationComponent implements OnInit, OnDestroy {
 
   private renderSubtree(treeData: any, nodeGroup: any, linkGroup: any): void {
     const nodes = treeData.descendants();
+
+    // Корректируем позиции для супругов
+    nodes.forEach((node: any) => {
+      if (node.data.spouse) {
+        node.data.spouse.x = node.x + this.nodeSpacing.x / 2;
+        node.data.spouse.y = node.y;
+      }
+    });
+
+    // Выравниваем детей с несколькими родителями
+    const parentPositionsCache = new Map<string, { x: number; y: number }>();
+    nodes.forEach((node: any) => {
+      if (node.data.parents && node.data.parents.length > 1) {
+        const parentNodes = nodes.filter((n: any) =>
+          node.data.parents.some((parent: any) => {
+            if (!parent || !parent.data) return false;
+            const parentId =
+              parent.data.id || (parent.data.data && parent.data.data.id);
+            const nodeId = n.data.data.id;
+            return parentId === nodeId;
+          })
+        );
+
+        if (parentNodes.length > 1) {
+          parentNodes.sort((a: any, b: any) => a.x - b.x);
+          const firstParent = parentNodes[0];
+          const lastParent = parentNodes[parentNodes.length - 1];
+          const centerX = (firstParent.x + lastParent.x) / 2;
+          const centerY = node.y - this.nodeRadius;
+          const deltaX = centerX - node.x;
+          this.shiftSubtree(node, deltaX);
+          parentPositionsCache.set(node.data.data.id, {
+            x: centerX,
+            y: centerY,
+          });
+        }
+      }
+    });
+
     const links = treeData.links();
 
     // Уникальный суффикс для этого поддерева
@@ -799,9 +839,28 @@ export class TreeVisualizationComponent implements OnInit, OnDestroy {
         const sourceY = d.source.y + this.nodeRadius;
         const targetY = d.target.y - this.nodeRadius;
 
-        return `M${d.source.x},${sourceY}
-                C${d.source.x},${(sourceY + targetY) / 2}
-                 ${d.target.x},${(sourceY + targetY) / 2}
+        let sourceX = d.source.x;
+        let sourceYPos = sourceY;
+
+        if (d.source.data.spouse) {
+          const spouseX = d.source.x + this.nodeSpacing.x / 2;
+          sourceX = (d.source.x + spouseX) / 2;
+          sourceYPos = sourceY;
+        }
+
+        if (d.target.data.data && d.target.data.data.id) {
+          const cachedPosition = parentPositionsCache.get(
+            d.target.data.data.id
+          );
+          if (cachedPosition) {
+            sourceX = cachedPosition.x;
+            sourceYPos = cachedPosition.y;
+          }
+        }
+
+        return `M${sourceX},${sourceYPos}
+                C${sourceX},${(sourceYPos + targetY) / 2}
+                 ${d.target.x},${(sourceYPos + targetY) / 2}
                  ${d.target.x},${targetY}`;
       })
       .style('fill', 'none')
@@ -1092,6 +1151,16 @@ export class TreeVisualizationComponent implements OnInit, OnDestroy {
     }
 
     return null;
+  }
+
+  private shiftSubtree(node: any, deltaX: number): void {
+    node.x += deltaX;
+    if (node.data && node.data.spouse) {
+      node.data.spouse.x += deltaX;
+    }
+    if (node.children) {
+      node.children.forEach((child: any) => this.shiftSubtree(child, deltaX));
+    }
   }
 
   private findNodePosition(
