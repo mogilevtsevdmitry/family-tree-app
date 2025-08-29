@@ -354,6 +354,8 @@ export class FamilyTreeService {
     const rootMember = root.data;
     const relationships = this.relationships$.value;
 
+    // Отладочная информация убрана
+
     // Находим прямые связи братьев/сестер для корня
     const siblingRelations = relationships.filter(
       (rel) =>
@@ -364,6 +366,8 @@ export class FamilyTreeService {
           (rel.type === RelationshipType.Brother ||
             rel.type === RelationshipType.Sister))
     );
+
+    // Отладочная информация убрана
 
     // Если у корня есть братья/сестры
     if (siblingRelations.length > 0) {
@@ -388,32 +392,11 @@ export class FamilyTreeService {
         }
       });
 
-      // Если есть братья/сестры без общих родителей, нужно изменить структуру
-      if (siblings.length > 0 && (!root.parents || root.parents.length === 0)) {
-        // Создаем виртуальную структуру с общим родителем
-        // или возвращаем расширенный корень с братьями/сестрами
-
-        // Вариант 1: Добавляем поле siblings к корню
+      // Добавляем братьев/сестер к корню в любом случае
+      if (siblings.length > 0) {
         (root as any).siblings = siblings;
-
-        // Вариант 2: Создаем виртуального родителя (закомментировано)
-        /*
-        const virtualParent: TreeNode = {
-          data: {
-            id: 'virtual_parent_' + rootMember.id,
-            firstName: 'Общий',
-            lastName: 'Предок',
-            gender: Gender.Other,
-            isVirtual: true // пометка для особого отображения
-          } as any,
-          children: [root, ...siblings],
-          parents: []
-        };
-        return virtualParent;
-        */
       }
     }
-
     return root;
   }
 

@@ -177,6 +177,7 @@ export class TreeVisualizationComponent implements OnInit, OnDestroy {
     this.initializeDimensions();
     this.initializeSvg();
     this.loadTreeData();
+    this.centerOnCurrentUser();
 
     // Подписка на изменения данных
     this.familyTreeService
@@ -197,6 +198,7 @@ export class TreeVisualizationComponent implements OnInit, OnDestroy {
       this.root = this.familyTreeService.buildTreeStructure(this.currentUserId);
       if (this.root) {
         this.renderTree();
+        setTimeout(() => this.centerOnCurrentUser(), 100);
       }
     }
   }
@@ -313,182 +315,12 @@ export class TreeVisualizationComponent implements OnInit, OnDestroy {
       }
     });
 
-    // Создание связей родитель-ребенок
-    const links = treeData.links();
-
-    // Кэшируем позиции родителей для оптимизации
-    const parentPositionsCache = new Map<string, { x: number; y: number }>();
-
-    // Предварительно вычисляем позиции для всех родителей
-    nodes.forEach((node: any) => {
-      if (node.data.parents && node.data.parents.length > 1) {
-        const parentNodes = nodes.filter((n: any) =>
-          node.data.parents.some((parent: any) => {
-            // Проверяем структуру parent
-            if (!parent || !parent.data) return false;
-            // parent может быть либо TreeNode, либо иметь структуру { data: FamilyMember }
-            const parentId =
-              parent.data.id || (parent.data.data && parent.data.data.id);
-            const nodeId = n.data.data.id;
-            return parentId === nodeId;
-          })
-        );
-
-        if (parentNodes.length > 1) {
-          parentNodes.sort((a: any, b: any) => a.x - b.x);
-          const firstParent = parentNodes[0];
-          const lastParent = parentNodes[parentNodes.length - 1];
-          const centerX = (firstParent.x + lastParent.x) / 2;
-          const centerY = node.y - this.nodeRadius;
-          const deltaX = centerX - node.x;
-          this.shiftSubtree(node, deltaX);
-          parentPositionsCache.set(node.data.data.id, {
-            x: centerX,
-            y: centerY,
-          });
-        }
-      }
-    });
-
-    // Создание дополнительных связей для всех отношений, которые не покрываются d3.hierarchy
-    const additionalLinks: any[] = [];
-
-    // Проходим по всем узлам и создаем недостающие связи
-    nodes.forEach((node: any) => {
-      // Добавляем связи родитель-ребенок, если они отсутствуют в d3.hierarchy
-      if (node.data.parents && node.data.parents.length > 0) {
-        node.data.parents.forEach((parent: any) => {
-          // Проверяем структуру parent
-          if (!parent || !parent.data) return;
-
-          // Получаем ID родителя с учетом возможных структур
-          const parentId =
-            parent.data.id || (parent.data.data && parent.data.data.id);
-          if (!parentId) return;
-
-          // Проверяем, есть ли уже такая связь в d3.hierarchy
-          const existingLink = links.find(
-            (link: any) =>
-              link.source.data.data.id === parentId &&
-              link.target.data.data.id === node.data.data.id
-          );
-
-          if (!existingLink) {
-            // Создаем дополнительную связь
-            const parentPosition = this.findNodePosition(parentId, nodes);
-            if (parentPosition) {
-              additionalLinks.push({
-                source: {
-                  data: parent,
-                  x: parentPosition.x,
-                  y: parentPosition.y,
-                },
-                target: {
-                  data: node.data,
-                  x: node.x,
-                  y: node.y,
-                },
-              });
-            }
-          }
-        });
-      }
-    });
-
-    // Дополнительно создаем связи для всех отношений из mock-data, которые не покрываются d3.hierarchy
-    // Это нужно для случаев, когда родители находятся на более высоком уровне дерева
-    const allMemberIds = new Set(nodes.map((n: any) => n.data.data.id));
-
-    // Получаем все связи из сервиса синхронно
-    const relationships =
-      (this.familyTreeService as any).relationships$.value || [];
-
-    console.log('=== DEBUG INFO ===');
-    console.log('All member IDs in tree:', Array.from(allMemberIds));
-    console.log('All relationships from service:', relationships);
-    console.log('Standard links from d3:', links);
-
-    relationships.forEach((rel: any) => {
-      // Проверяем, есть ли связь родитель-ребенок
-      if (
-        rel.type === RelationshipType.Son ||
-        rel.type === RelationshipType.Daughter
-      ) {
-        const parentId = rel.sourceId;
-        const childId = rel.targetId;
-
-        console.log(
-          `Processing relationship: ${parentId} -> ${childId} (${rel.type})`
-        );
-
-        // Проверяем, есть ли оба узла в дереве
-        if (allMemberIds.has(parentId) && allMemberIds.has(childId)) {
-          console.log(`Both nodes exist in tree: ${parentId} and ${childId}`);
-
-          // Проверяем, есть ли уже такая связь
-          const existingLink = links.find(
-            (link: any) =>
-              link.source.data.data.id === parentId &&
-              link.target.data.data.id === childId
-          );
-
-          const existingAdditionalLink = additionalLinks.find(
-            (link: any) =>
-              link.source.data.data.id === parentId &&
-              link.target.data.data.id === childId
-          );
-
-          console.log(`Existing link in d3:`, existingLink);
-          console.log(`Existing link in additional:`, existingAdditionalLink);
-
-          if (!existingLink && !existingAdditionalLink) {
-            console.log(`Creating new link: ${parentId} -> ${childId}`);
-
-            // Создаем дополнительную связь
-            const parentPosition = this.findNodePosition(parentId, nodes);
-            const childPosition = this.findNodePosition(childId, nodes);
-
-            console.log(`Parent position:`, parentPosition);
-            console.log(`Child position:`, childPosition);
-
-            if (parentPosition && childPosition) {
-              additionalLinks.push({
-                source: {
-                  data: { data: { id: parentId } }, // Упрощенная структура
-                  x: parentPosition.x,
-                  y: parentPosition.y,
-                },
-                target: {
-                  data: { data: { id: childId } }, // Упрощенная структура
-                  x: childPosition.x,
-                  y: childPosition.y,
-                },
-              });
-              console.log(`Link added to additionalLinks`);
-            }
-          }
-        } else {
-          console.log(
-            `Missing nodes: parentId=${parentId} (${allMemberIds.has(
-              parentId
-            )}), childId=${childId} (${allMemberIds.has(childId)})`
-          );
-        }
-      }
-    });
-
-    console.log('Additional links created:', additionalLinks);
-    console.log('=== END DEBUG INFO ===');
-
-    // Объединяем стандартные и дополнительные связи
-    const allLinks = [...links, ...additionalLinks];
-
     // Рисование всех связей с учетом позиционирования родителей
     // Если у ребенка есть несколько родителей (супруги или разведенные),
     // то линия связи выходит из центра между ними
     linkGroup
       .selectAll('.link')
-      .data(allLinks)
+      .data(treeData.links())
       .enter()
       .append('path')
       .attr('class', 'link')
@@ -510,18 +342,6 @@ export class TreeVisualizationComponent implements OnInit, OnDestroy {
           const spouseX = d.source.x + this.nodeSpacing.x / 2;
           sourceX = (d.source.x + spouseX) / 2; // центр между родителями
           sourceYPos = sourceY;
-        }
-
-        // Случай 2: Если у ребенка есть несколько родителей (например, разведенные)
-        // используем кэшированную позицию центра
-        if (d.target.data.data && d.target.data.data.id) {
-          const cachedPosition = parentPositionsCache.get(
-            d.target.data.data.id
-          );
-          if (cachedPosition) {
-            sourceX = cachedPosition.x;
-            sourceYPos = cachedPosition.y;
-          }
         }
 
         // Строим кривую Безье от начальной точки к ребенку
@@ -758,8 +578,17 @@ export class TreeVisualizationComponent implements OnInit, OnDestroy {
           .text('+');
       }
     });
+
     if ((this.root as any).siblings) {
       const siblings = (this.root as any).siblings as TreeNode[];
+      console.log('Siblings count:', siblings.length);
+      siblings.forEach((sibling, i) => {
+        console.log(
+          `Sibling ${i}:`,
+          sibling.data.firstName,
+          sibling.data.lastName
+        );
+      });
 
       // Отрисовываем братьев/сестер на том же уровне, что и корень
       siblings.forEach((siblingNode, index) => {
@@ -793,36 +622,6 @@ export class TreeVisualizationComponent implements OnInit, OnDestroy {
       }
     });
 
-    // Выравниваем детей с несколькими родителями
-    const parentPositionsCache = new Map<string, { x: number; y: number }>();
-    nodes.forEach((node: any) => {
-      if (node.data.parents && node.data.parents.length > 1) {
-        const parentNodes = nodes.filter((n: any) =>
-          node.data.parents.some((parent: any) => {
-            if (!parent || !parent.data) return false;
-            const parentId =
-              parent.data.id || (parent.data.data && parent.data.data.id);
-            const nodeId = n.data.data.id;
-            return parentId === nodeId;
-          })
-        );
-
-        if (parentNodes.length > 1) {
-          parentNodes.sort((a: any, b: any) => a.x - b.x);
-          const firstParent = parentNodes[0];
-          const lastParent = parentNodes[parentNodes.length - 1];
-          const centerX = (firstParent.x + lastParent.x) / 2;
-          const centerY = node.y - this.nodeRadius;
-          const deltaX = centerX - node.x;
-          this.shiftSubtree(node, deltaX);
-          parentPositionsCache.set(node.data.data.id, {
-            x: centerX,
-            y: centerY,
-          });
-        }
-      }
-    });
-
     const links = treeData.links();
 
     // Уникальный суффикс для этого поддерева
@@ -846,16 +645,6 @@ export class TreeVisualizationComponent implements OnInit, OnDestroy {
           const spouseX = d.source.x + this.nodeSpacing.x / 2;
           sourceX = (d.source.x + spouseX) / 2;
           sourceYPos = sourceY;
-        }
-
-        if (d.target.data.data && d.target.data.data.id) {
-          const cachedPosition = parentPositionsCache.get(
-            d.target.data.data.id
-          );
-          if (cachedPosition) {
-            sourceX = cachedPosition.x;
-            sourceYPos = cachedPosition.y;
-          }
         }
 
         return `M${sourceX},${sourceYPos}

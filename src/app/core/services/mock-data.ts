@@ -103,6 +103,17 @@ export let mockMembers: FamilyMember[] = [
     lastName: 'Могилевцева',
     gender: Gender.Female,
   },
+  // Сестра Валентины
+  {
+    id: '12',
+    firstName: 'Любовь',
+    lastName: 'Баева',
+    middleName: 'Ивановна',
+    gender: Gender.Female,
+    birthDate: new Date(1948, 3, 15),
+    occupation: 'Учитель',
+    location: 'Новороссийск',
+  },
 ];
 
 export let mockRelationships: Relationship[] = [
@@ -122,6 +133,7 @@ export let mockRelationships: Relationship[] = [
   { id: 'r14', sourceId: '10', targetId: '3', type: RelationshipType.Son },
   { id: 'r15', sourceId: '11', targetId: '3', type: RelationshipType.Son },
   { id: 'r16', sourceId: '10', targetId: '11', type: RelationshipType.Spouse },
+  { id: 'r17', sourceId: '8', targetId: '12', type: RelationshipType.Sister },
 ];
 
 export function addMember(member: FamilyMember): FamilyMember[] {
