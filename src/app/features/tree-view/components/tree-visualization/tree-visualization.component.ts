@@ -315,6 +315,18 @@ export class TreeVisualizationComponent implements OnInit, OnDestroy {
       }
     });
 
+    // Корректируем позиции дочерних элементов, когда у родителя есть супруг
+    // чтобы линии связи выходили из правильного места
+    nodes.forEach((node: any) => {
+      if (node.data.spouse && node.children && node.children.length > 0) {
+        // Смещаем всех детей на половину расстояния между супругами
+        const spouseOffset = this.nodeSpacing.x / 4; // половина от половины расстояния между супругами
+        node.children.forEach((child: any) => {
+          this.shiftSubtree(child, spouseOffset);
+        });
+      }
+    });
+
     // Рисование всех связей с учетом позиционирования родителей
     // Если у ребенка есть несколько родителей (супруги или разведенные),
     // то линия связи выходит из центра между ними
@@ -619,6 +631,18 @@ export class TreeVisualizationComponent implements OnInit, OnDestroy {
       if (node.data.spouse) {
         node.data.spouse.x = node.x + this.nodeSpacing.x / 2;
         node.data.spouse.y = node.y;
+      }
+    });
+
+    // Корректируем позиции дочерних элементов, когда у родителя есть супруг
+    // чтобы линии связи выходили из правильного места
+    nodes.forEach((node: any) => {
+      if (node.data.spouse && node.children && node.children.length > 0) {
+        // Смещаем всех детей на половину расстояния между супругами
+        const spouseOffset = this.nodeSpacing.x / 4; // половина от половины расстояния между супругами
+        node.children.forEach((child: any) => {
+          this.shiftSubtree(child, spouseOffset);
+        });
       }
     });
 
